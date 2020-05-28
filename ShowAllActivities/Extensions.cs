@@ -3,10 +3,8 @@ using Microsoft.Crm.Sdk.Messages;
 using Microsoft.Xrm.Sdk;
 using Microsoft.Xrm.Sdk.Query;
 using System;
-using System.Collections.Generic;
 using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
+using System.Web.UI.WebControls;
 
 namespace ShowAllActivities
 {
@@ -15,37 +13,23 @@ namespace ShowAllActivities
         public static bool ReplaceRegardingCondition(this QueryExpression query, JonasPluginBag bag)
         {
             bag.TraceBlockStart();
-            if (query.EntityName != "activitypointer" || query.Criteria == null || query.Criteria.Conditions == null || query.Criteria.Conditions.Count < 2)
+            if (query.EntityName != "activitypointer")
             {
-                bag.Trace("Not expected query");
+                bag.Trace($"Wrong entity: {query.EntityName}");
                 bag.TraceBlockEnd();
                 return false;
             }
-
-            ConditionExpression nullCondition = null;
-            ConditionExpression regardingCondition = null;
-
-            bag.Trace("Checking criteria for expected conditions");
-            foreach (ConditionExpression cond in query.Criteria.Conditions)
+            var nullCondition = query.GetCondition("activityid", ConditionOperator.Null);
+            if (nullCondition == null)
             {
-                if (cond.AttributeName == "activityid" && cond.Operator == ConditionOperator.Null)
-                {
-                    bag.Trace("Found triggering null condition");
-                    nullCondition = cond;
-                }
-                else if (cond.AttributeName == "regardingobjectid" && cond.Operator == ConditionOperator.Equal && cond.Values.Count == 1 && cond.Values[0] is Guid)
-                {
-                    bag.Trace("Found condition for regardingobjectid");
-                    regardingCondition = cond;
-                }
-                else
-                {
-                    bag.Trace($"Disregarding condition for {cond.AttributeName}");
-                }
+                bag.Trace("No null condition for activityid");
+                bag.TraceBlockEnd();
+                return false;
             }
-            if (nullCondition == null || regardingCondition == null)
+            var regardingCondition = query.GetCondition("regardingobjectid", ConditionOperator.Equal);
+            if (regardingCondition == null || regardingCondition.Values.Count != 1 || !(regardingCondition.Values[0] is Guid))
             {
-                bag.Trace("Missing expected null condition or regardingobjectid condition");
+                bag.Trace("No condition for regardingobjectid");
                 bag.TraceBlockEnd();
                 return false;
             }
@@ -76,67 +60,57 @@ namespace ShowAllActivities
             return false;
         }
 
-        private static bool ReplaceRegardingConditionUCI(QueryExpression query, ITracingService tracer)
+        private static ConditionExpression GetCondition(this QueryExpression query, string attribute, ConditionOperator? oper)
         {
-            if (query.EntityName != "activitypointer" || query.Criteria == null || query.Criteria.Conditions == null || query.Criteria.Filters[0].Conditions.Count < 2)
+            var result = query.Criteria?.GetCondition(attribute, oper);
+            if (result!=null)
             {
-                tracer.Trace("Not expected query");
-                return false;
+                return result;
             }
-
-            ConditionExpression nullCondition = null;
-            ConditionExpression regardingCondition = null;
-
-            tracer.Trace("Checking criteria for expected conditions");
-            foreach (ConditionExpression cond in query.Criteria.Filters[0].Conditions)
+            foreach (var link in query.LinkEntities)
             {
-                if (cond.AttributeName == "activityid" && cond.Operator == ConditionOperator.Null)
+                var linkresult = link.GetCondition(attribute, oper);
+                if (linkresult != null)
                 {
-                    tracer.Trace("Found triggering null condition");
-                    nullCondition = cond;
-                }
-                else if (cond.AttributeName == "regardingobjectid" && cond.Operator == ConditionOperator.Equal && cond.Values.Count == 1 && cond.Values[0] is Guid)
-                {
-                    tracer.Trace("Found condition for regardingobjectid");
-                    regardingCondition = cond;
-                }
-                else
-                {
-                    tracer.Trace($"Disregarding condition for {cond.AttributeName}");
+                    return linkresult;
                 }
             }
+            return null;
+        }
 
-            foreach (ConditionExpression cond in query.LinkEntities[0].LinkCriteria.Conditions)
+        private static ConditionExpression GetCondition(this LinkEntity linkentity, string attribute, ConditionOperator? oper)
+        {
+            var result = linkentity.LinkCriteria?.GetCondition(attribute, oper);
+            if (result != null)
             {
-                if (cond.AttributeName == "contactid" && cond.Operator == ConditionOperator.Equal && cond.Values.Count == 1)
+                return result;
+            }
+            foreach (var link in linkentity.LinkEntities)
+            {
+                var linkresult = link.GetCondition(attribute, oper);
+                if (linkresult != null)
                 {
-                    tracer.Trace("Found condition for regardingobjectid/contactid");
-                    regardingCondition = cond;
-                }
-                else
-                {
-                    tracer.Trace($"Disregarding condition for {cond.AttributeName}");
+                    return linkresult;
                 }
             }
+            return null;
+        }
 
-
-            if (nullCondition == null || regardingCondition == null)
+        private static ConditionExpression GetCondition(this FilterExpression filter, string attribute, ConditionOperator? oper)
+        {
+            var result = filter?.Conditions?.FirstOrDefault(c => c.AttributeName.Equals(attribute) && (oper == null || oper == c.Operator));
+            if (result != null)
             {
-                tracer.Trace("Missing expected null condition or regardingobjectid condition");
-                return false;
+                return result;
             }
-            var regardingId = (Guid)regardingCondition.Values[0];
-            tracer.Trace($"Found regarding id: {regardingId}");
-
-            tracer.Trace("Removing triggering conditions");
-            query.Criteria.Filters[0].Conditions.Remove(nullCondition);
-            query.Criteria.Filters[0].Conditions.Remove(regardingCondition);
-            query.LinkEntities.Remove(query.LinkEntities[0]);
-
-            tracer.Trace("Adding link-entity and condition for activity party");
-            var leActivityparty = query.AddLink("activityparty", "activityid", "activityid");
-            leActivityparty.LinkCriteria.AddCondition("partyid", ConditionOperator.Equal, regardingId);
-            return true;
+            foreach (var subfilter in filter?.Filters)
+            {
+                if (subfilter.GetCondition(attribute, oper) is ConditionExpression subresult)
+                {
+                    return subresult;
+                }
+            }
+            return null;
         }
     }
 }
