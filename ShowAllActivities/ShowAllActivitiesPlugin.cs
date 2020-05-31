@@ -8,6 +8,9 @@ namespace ShowAllActivities
 {
     public class ShowAllActivitiesPlugin : JonasPluginBase
     {
+        // Set this true if distinct flag should be set on the query
+        private const bool distinct = true;
+
         public override void Execute(JonasPluginBag bag)
         {
             try
@@ -26,7 +29,7 @@ namespace ShowAllActivities
                     var fetch1 = ((QueryExpressionToFetchXmlResponse)bag.Service.Execute(new QueryExpressionToFetchXmlRequest() { Query = query })).FetchXml;
                     bag.Trace($"Query before:\n{fetch1}");
 #endif
-                    if (query.ReplaceRegardingCondition(bag))
+                    if (query.ReplaceRegardingCondition(bag, distinct))
                     {
 #if DEBUG
                         var fetch2 = ((QueryExpressionToFetchXmlResponse)bag.Service.Execute(new QueryExpressionToFetchXmlRequest() { Query = query })).FetchXml;
@@ -39,7 +42,7 @@ namespace ShowAllActivities
                 {
                     bag.trace("Checking FetchExpression");
                     bag.Trace($"Query before:\n{fetch.Query}");
-                    if (fetch.ReplaceRegardingCondition(bag))
+                    if (fetch.ReplaceRegardingCondition(bag, distinct))
                     {
                         bag.Trace($"Query after:\n{fetch.Query}");
                         bag.PluginContext.InputParameters["Query"] = fetch;

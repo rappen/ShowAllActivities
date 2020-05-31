@@ -10,7 +10,7 @@ namespace ShowAllActivities
 {
     public static class Extensions
     {
-        public static bool ReplaceRegardingCondition(this QueryExpression query, JonasPluginBag bag)
+        public static bool ReplaceRegardingCondition(this QueryExpression query, JonasPluginBag bag, bool makeDistinct)
         {
             bag.TraceBlockStart();
             if (query.EntityName != "activitypointer")
@@ -67,15 +67,20 @@ namespace ShowAllActivities
             bag.Trace("Adding link-entity and condition for activity party");
             var leActivityparty = query.AddLink("activityparty", "activityid", "activityid");
             leActivityparty.LinkCriteria.AddCondition("partyid", ConditionOperator.Equal, contactId);
+
+            if (makeDistinct)
+            {
+                query.Distinct = true;
+            }
             bag.TraceBlockEnd();
             return true;
         }
 
-        public static bool ReplaceRegardingCondition(this FetchExpression fetch, JonasPluginBag bag)
+        public static bool ReplaceRegardingCondition(this FetchExpression fetch, JonasPluginBag bag, bool makeDistinct)
         {
             bag.TraceBlockStart();
             var query = (bag.Service.Execute(new FetchXmlToQueryExpressionRequest { FetchXml = fetch.Query }) as FetchXmlToQueryExpressionResponse)?.Query;
-            if (query.ReplaceRegardingCondition(bag))
+            if (query.ReplaceRegardingCondition(bag, makeDistinct))
             {
                 fetch.Query = (bag.Service.Execute(new QueryExpressionToFetchXmlRequest { Query = query }) as QueryExpressionToFetchXmlResponse)?.FetchXml;
                 return true;
